@@ -48,13 +48,18 @@ async def get_users():
     async with aiohttp.ClientSession() as session:
         async with session.get(API_URL_USER, headers=HEADERS) as response:
             try:
-                users = await response.json()
+                result = await response.json()
+                users = result.get('results', [])
+                logging.info(f'Получен ответ API пользователей: {result}')
                 if not isinstance(users, list):
                     logging.error('Ответ API пользователей не является списком')
                     return []
                 return users
-            except ValueError:
-                logging.error('Ошибка чтения ответа API пользователей')
+            except ValueError as error:
+                logging.error(f'Ошибка чтения ответа API пользователей: {error}')
+                return []
+            except Exception as e:
+                logging.error(f'Неожиданная ошибка: {e}')
                 return []
 
 

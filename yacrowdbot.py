@@ -8,6 +8,7 @@ from telegram.ext import (Application, CommandHandler, MessageHandler, filters, 
 from telegram.error import TelegramError
 import aiohttp
 import logging
+import pytz
 
 
 load_dotenv()
@@ -34,7 +35,13 @@ async def get_posts():
         async with session.get(API_URL_POST, headers=HEADERS) as response:
             if response.status == 200:
                 try:
-                    return await response.json()
+                    data = await response.json()
+                    logging.info(f"Полученные данные постов: {data}")
+                    if 'results' in data and isinstance(data['results'], list):
+                        return data['results']
+                    else:
+                        logging.error('Ответ API постов не содержит ключа results или не является списком')
+                        return []
                 except ValueError:
                     logging.error('Ошибка чтения ответа API постов')
                     return []
@@ -214,6 +221,29 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Установка часового пояса пользователя"""
+    chat_id = update.effective_chat.id
+    user_input = update.message.text.strip()
+
+    try:
+        # Проверяем, существует ли введенный пользователем часовой пояс
+        pytz.timezone(user_input)
+
+        # Обновляем данные пользователя в базе данных
+        await update_user(chat_id, {'time_zone': user_input})
+
+        await update.message.reply_text("Ваш часовой пояс успешно установлен!")
+
+        # Устанавливаем активность пользователя после установки часового пояса
+        await update_user(chat_id, {'active': True})
+    except pytz.exceptions.UnknownTimeZoneError:
+        await update.message.reply_text(
+            "Указанный вами часовой пояс не найден. Пожалуйста, введите часовой пояс в формате '+HH:MM'.")
+
+    return ConversationHandler.END
+
+
 async def wake_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Запуск бота"""
     chat = update.effective_chat
@@ -229,6 +259,14 @@ async def wake_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = await get_user(chat.id)
         if not user:
             await store_user(chat.id, name)
+            # Запрашиваем и сохраняем часовой пояс пользователя
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text="Пожалуйста, укажите ваш текущий часовой пояс в формате '±HH:MM'. Например, '+03:00' для Москвы."
+            )
+            # Устанавливаем состояние ожидания ответа о часовом поясе пользователя
+            context.user_data['state'] = 'time_zone'
+            return SET_TIME
         else:
             await update_user(chat.id, {'active': True})
     except Exception as e:
@@ -243,35 +281,62 @@ async def wake_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_news(context: ContextTypes.DEFAULT_TYPE):
     """Рассылка новостей"""
-    posts = await get_posts()
-    now = datetime.now().time()
+    try:
+        posts = await get_posts()
+        now = datetime.now()
 
-    users = await get_users()
-    if not users:
-        return
+        users = await get_users()
+        if not users:
+            return
 
-    for user in users:
-        if user.get('active'):
-            start_time = datetime.strptime(user.get('start_time'), '%H:%M').time()
-            end_time = datetime.strptime(user.get('end_time'), '%H:%M').time()
+        for user in users:
+            if user.get('active'):
+                # Получаем часовой пояс пользователя
+                user_timezone_name = user.get('time_zone')
+                # Преобразуем часовой пояс пользователя из формата '+03:00' в стандартное имя часового пояса
+                user_timezone_name_standard = pytz.country_timezones['RU'][0]
 
-            if start_time <= now <= end_time:
-                for post in posts:
-                    post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').time()
-                    if post_time >= (datetime.combine(datetime.today(), now) - timedelta(minutes=10)).time():
-                        post_content = f"{post['title']}\n\n{post['text']}"
-                        try:
-                            await context.bot.send_message(chat_id=user['id'], text=post_content)
+                try:
+                    # Создаем объект pytz.timezone
+                    user_timezone = pytz.timezone(user_timezone_name_standard)
 
-                            if post.get('image'):
-                                for image in post['image']:
-                                    await context.bot.send_photo(chat_id=user['id'], photo=image)
+                    now_local = now.astimezone(user_timezone)
 
-                            if post.get('video'):
-                                for video in post['video']:
-                                    await context.bot.send_video(chat_id=user['id'], video=video)
-                        except TelegramError as error:
-                            logging.error(f'Ошибка при отправке поста: {error}')
+                    start_time = datetime.strptime(user.get('start_time'), '%H:%M').time()
+                    end_time = datetime.strptime(user.get('end_time'), '%H:%M').time()
+
+                    logging.info(f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
+
+                    if start_time <= now_local.time() <= end_time:
+                        for post in posts:
+                            if isinstance(post, dict) and 'date_create' in post and 'title' in post and 'text' in post:
+                                try:
+                                    # Преобразуем время поста в локальное время пользователя
+                                    post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.utc).astimezone(user_timezone).time()
+                                    logging.info(f"Проверка времени поста: post_time={post_time}")
+
+                                    if post_time >= (now_local - timedelta(minutes=10)).time():
+                                        post_content = f"{post['title']}\n\n{post['text']}"
+                                        logging.info(f"Отправка сообщения пользователю {user['id']}: {post_content}")
+                                        await context.bot.send_message(chat_id=user['id'], text=post_content)
+
+                                        if post.get('image'):
+                                            for image in post['image']:
+                                                await context.bot.send_photo(chat_id=user['id'], photo=image)
+
+                                        if post.get('video'):
+                                            for video in post['video']:
+                                                await context.bot.send_video(chat_id=user['id'], video=video)
+                                except TelegramError as error:
+                                    logging.error(f'Ошибка при отправке поста: {error}')
+                            else:
+                                logging.error('Некорректная структура данных поста')
+                except pytz.exceptions.UnknownTimeZoneError:
+                    logging.error(f'Не удалось создать объект pytz.timezone для пользователя {user["id"]}. Неизвестный часовой пояс: {user_timezone_name_standard}')
+                except KeyError:
+                    logging.error(f"Не удалось найти стандартное имя часового пояса для пользователя {user['id']}")
+    except Exception as e:
+        logging.error(f'Ошибка при отправке новостей: {e}', exc_info=True)
 
 
 async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -325,7 +390,7 @@ def main():
 
     application.add_error_handler(handle_telegram_error)
 
-    application.job_queue.run_repeating(send_news, interval=600, first=10)
+    application.job_queue.run_repeating(send_news, interval=60, first=10)
 
     application.run_polling()
 

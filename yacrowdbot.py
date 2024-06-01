@@ -326,7 +326,7 @@ def main():
         },
         fallbacks=[
             CommandHandler('help', help_command),
-            CommandHandler('keep_settings', keep_settings)
+            CallbackQueryHandler(button_handler)
         ],
         per_message=False
     )

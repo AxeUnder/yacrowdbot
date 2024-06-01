@@ -190,7 +190,7 @@ def convert_time_zone(time_zone):
     offset = hours * 60 + minutes
     if sign == '-':
         offset = -offset
-    return timezone(timedelta(minutes=offset))
+    return pytz.FixedOffset(offset)
 
 
 async def send_news(context: ContextTypes.DEFAULT_TYPE):
@@ -221,7 +221,7 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                 post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').astimezone(user_timezone)
                                 logging.info(f"Проверка времени поста: post_time={post_time.time()}")
 
-                                if post_time.time() >= (now_local - timedelta(minutes=10)).time():
+                                if post_time >= (now_local - timedelta(minutes=10)):
                                     post_content = f"{post['title']}\n\n{post['text']}"
                                     logging.info(f"Отправка сообщения пользователю {user['id']}: {post_content}")
                                     await context.bot.send_message(chat_id=user['id'], text=post_content)

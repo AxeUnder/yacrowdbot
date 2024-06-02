@@ -197,7 +197,7 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
     """Рассылка новостей"""
     try:
         posts = await get_posts()
-        now = datetime.now(pytz.utc)
+        now_utc = datetime.now(pytz.utc)
 
         users = await get_users()
         if not users:
@@ -208,20 +208,26 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                 user_timezone_offset = user.get('time_zone')
                 user_timezone = convert_time_zone(user_timezone_offset)
 
-                now_local = now.astimezone(user_timezone)
+                now_local = now_utc.astimezone(user_timezone)
                 start_time = datetime.strptime(user.get('start_time'), '%H:%M').time()
                 end_time = datetime.strptime(user.get('end_time'), '%H:%M').time()
 
-                logging.info(f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
+                logging.info(
+                    f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
 
                 if start_time <= now_local.time() <= end_time:
                     for post in posts:
                         if isinstance(post, dict) and 'date_create' in post and 'title' in post and 'text' in post:
                             try:
-                                post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').astimezone(user_timezone)
-                                logging.info(f"Проверка времени поста: post_time={post_time.time()}")
+                                # Преобразование времени создания поста в datetime с учетом временной зоны UTC
+                                post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(
+                                    tzinfo=pytz.utc)
+                                logging.info(f"Проверка времени поста: post_time={post_time}")
 
-                                if post_time >= (now_local - timedelta(minutes=10)):
+                                # Преобразование времени поста в локальное время пользователя
+                                post_time_local = post_time.astimezone(user_timezone)
+
+                                if post_time_local >= (now_local - timedelta(minutes=10)):
                                     post_content = f"{post['title']}\n\n{post['text']}"
                                     logging.info(f"Отправка сообщения пользователю {user['id']}: {post_content}")
                                     await context.bot.send_message(chat_id=user['id'], text=post_content)

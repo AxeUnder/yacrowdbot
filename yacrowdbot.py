@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from pytz import timezone
+
+import requests
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (Application, CommandHandler, MessageHandler, filters, ContextTypes,
@@ -12,6 +13,9 @@ from api import *
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.getLogger().setLevel(logging.INFO)
+
+# A dictionary to keep track of the last post sent to each user
+last_sent_posts = {}
 
 # Define states for ConversationHandler
 SET_TIME, SET_TIME_ZONE = range(2)
@@ -212,19 +216,19 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                 start_time = datetime.strptime(user.get('start_time'), '%H:%M').time()
                 end_time = datetime.strptime(user.get('end_time'), '%H:%M').time()
 
-                logging.info(
-                    f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
+                logging.info(f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
 
                 if start_time <= now_local.time() <= end_time:
                     for post in posts:
                         if isinstance(post, dict) and 'date_create' in post and 'title' in post and 'text' in post:
                             try:
-                                # Преобразование времени создания поста в datetime с учетом временной зоны UTC
-                                post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(
-                                    tzinfo=pytz.utc)
+                                post_id = post['id']
+                                if user['id'] in last_sent_posts and post_id <= last_sent_posts[user['id']]:
+                                    continue  # Skip this post if it has already been sent to the user
+
+                                post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.utc)
                                 logging.info(f"Проверка времени поста: post_time={post_time}")
 
-                                # Преобразование времени поста в локальное время пользователя
                                 post_time_local = post_time.astimezone(user_timezone)
 
                                 if post_time_local >= (now_local - timedelta(minutes=10)):
@@ -233,12 +237,27 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                     await context.bot.send_message(chat_id=user['id'], text=post_content)
 
                                     if post.get('image'):
-                                        for image in post['image']:
-                                            await context.bot.send_photo(chat_id=user['id'], photo=image)
+                                        # Отправка всех изображений по одному
+                                        for image_url in post['image']:
+                                            try:
+                                                response = requests.get(image_url)
+                                                response.raise_for_status()  # Проверка на успешный статус код
+                                                await context.bot.send_photo(chat_id=user['id'], photo=image_url)
+                                            except requests.exceptions.RequestException as e:
+                                                logging.error(f"Ошибка при получении изображения {image_url}: {e}")
 
                                     if post.get('video'):
-                                        for video in post['video']:
-                                            await context.bot.send_video(chat_id=user['id'], video=video)
+                                        # Проверка доступности видео по URL
+                                        video_url = post['video']
+                                        try:
+                                            response = requests.get(video_url)
+                                            response.raise_for_status()  # Проверка на успешный статус код
+                                            await context.bot.send_video(chat_id=user['id'], video=video_url)
+                                        except requests.exceptions.RequestException as e:
+                                            logging.error(f"Ошибка при получении видео {video_url}: {e}")
+
+                                    last_sent_posts[user['id']] = post_id  # Обновление ID последнего отправленного поста для пользователя
+
                             except Exception as e:
                                 logging.error(f'Ошибка при отправке поста пользователю {user["id"]}: {e}')
 

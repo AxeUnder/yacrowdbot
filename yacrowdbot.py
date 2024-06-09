@@ -27,6 +27,36 @@ async def say_hi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=chat.id, text='Привет, я CrowdBot!')
 
 
+async def change_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Инициация смены времени рассылки"""
+    chat = update.effective_chat
+    response = await get_user(chat.id)
+
+    start_time = response.get('start_time')
+    end_time = response.get('end_time')
+
+    # Преобразуем время из формата чч:мм:сс в чч:мм
+    if len(start_time) > 5:
+        start_time = start_time[:5]
+    if len(end_time) > 5:
+        end_time = end_time[:5]
+
+    keyboard = [
+        [InlineKeyboardButton('Оставить текущие настройки', callback_data='keep_settings')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await context.bot.send_message(
+        chat_id=chat.id,
+        text=f'Текущие настройки времени: {start_time}-{end_time}\n'
+             'Для смены времени отправки новостей введите интервал времени в формате: чч:мм-чч:мм',
+        reply_markup=reply_markup
+    )
+
+    logging.info(f'Текущие настройки времени: {start_time}-{end_time}')
+
+    return SET_TIME
+
+
 async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Установка времени рассылки"""
     chat = update.effective_chat
@@ -67,19 +97,12 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return SET_TIME
 
 
-async def change_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Инициация смены времени рассылки"""
+async def change_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Инициализация смены часового пояса"""
     chat = update.effective_chat
     response = await get_user(chat.id)
 
-    start_time = response.get('start_time')
-    end_time = response.get('end_time')
-
-    # Преобразуем время из формата чч:мм:сс в чч:мм
-    if len(start_time) > 5:
-        start_time = start_time[:5]
-    if len(end_time) > 5:
-        end_time = end_time[:5]
+    time_zone = response.get('time_zone')
 
     keyboard = [
         [InlineKeyboardButton('Оставить текущие настройки', callback_data='keep_settings')]
@@ -87,11 +110,14 @@ async def change_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(
         chat_id=chat.id,
-        text=f'Текущие настройки времени: {start_time}-{end_time}\n'
-             'Для смены времени отправки новостей введите интервал времени в формате: чч:мм-чч:мм',
+        text=f'Ваш текущий часовой пояс: {time_zone}\n'
+             'Для смены часового пояса введите его в формате ±чч:мм:',
         reply_markup=reply_markup
     )
-    return SET_TIME
+
+    logging.info(f'Текущий часовой пояс пользователя {chat.id}: {time_zone}')
+
+    return SET_TIME_ZONE
 
 
 async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,29 +161,6 @@ async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         logging.error(f"Ошибка при установке часового пояса для пользователя {chat_id}: {error}")
         return SET_TIME_ZONE
-
-
-async def change_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Инициализация смены часового пояса"""
-    chat = update.effective_chat
-    user = await get_user(chat.id)
-
-    time_zone = user.get('time_zone')
-
-    keyboard = [
-        [InlineKeyboardButton('Оставить текущие настройки', callback_data='keep_settings')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await context.bot.send_message(
-        chat_id=chat.id,
-        text=f'Ваш текущий часовой: {time_zone}\n'
-             'Для смены часового пояса введите его в формате ±чч:мм:',
-        reply_markup=reply_markup
-    )
-
-    logging.info(f"Текущий часовой пояс пользователя {chat.id}: {time_zone}")
-
-    return SET_TIME_ZONE
 
 
 async def wake_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -213,8 +216,8 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                 user_timezone = convert_time_zone(user_timezone_offset)
 
                 now_local = now_utc.astimezone(user_timezone)
-                start_time = datetime.strptime(user.get('start_time'), '%H:%M').time()
-                end_time = datetime.strptime(user.get('end_time'), '%H:%M').time()
+                start_time = datetime.strptime(user.get('start_time')[:5], '%H:%M').time()
+                end_time = datetime.strptime(user.get('end_time')[:5], '%H:%M').time()
 
                 logging.info(
                     f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
@@ -291,14 +294,36 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def keep_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Оставить текущие настройки"""
     chat = update.effective_chat
-
-    await context.bot.send_message(chat_id=chat.id, text='Текущие настройки оставлены без изменений.')
+    keyboard = [
+        [InlineKeyboardButton('Помощь', callback_data='help')],
+        [InlineKeyboardButton('Изменить время⌛', callback_data='change_time')],
+        [InlineKeyboardButton('Изменить часовой пояс🌐', callback_data='change_time_zone')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await context.bot.send_message(
+        chat_id=chat.id,
+        text='Текущие настройки оставлены без изменений.',
+        reply_markup=reply_markup
+    )
 
     return ConversationHandler.END
 
 
+async def stop_sending(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отключение рассылки новостей"""
+    try:
+        raise context.error
+    except TelegramError as error:
+        if 'blocked by the user' in str(error):
+            chat_id = update.effective_chat.id
+            await update_user(chat_id, {'active': False})
+            logging.info(f'Пользователь {chat_id} заблокировал бота. Маркер активности был изменен в БД.')
+        else:
+            logging.error(f'Telegram error: {error}')
+
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка нажатия кнопок"""
+    """Обработчик нажатия кнопок"""
     try:
         query = update.callback_query
         query_data = query.data
@@ -320,19 +345,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f'Ошибка при обработке нажатия кнопок: {e}')
 
 
-async def handle_telegram_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка ошибок Telegram"""
-    try:
-        raise context.error
-    except TelegramError as error:
-        if 'blocked by the user' in str(error):
-            chat_id = update.effective_chat.id
-            await update_user(chat_id, {'active': False})
-            logging.info(f'Пользователь {chat_id} заблокировал бота. Маркер активности был изменен в БД.')
-        else:
-            logging.error(f'Telegram error: {error}')
-
-
 def main():
     application = Application.builder().token(API_TOKEN).build()
 
@@ -340,33 +352,37 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler('start', wake_up),
+            CommandHandler('help', help_command),
             CommandHandler('change_time', change_time),
-            CommandHandler('change_time_zone', change_time_zone)
+            CommandHandler('change_time_zone', change_time_zone),
+            CallbackQueryHandler(button_handler)
         ],
         states={
             SET_TIME: [
+                CallbackQueryHandler(button_handler, pattern='^keep_settings$'),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, set_time)
             ],
             SET_TIME_ZONE: [
+                CallbackQueryHandler(button_handler, pattern='^keep_settings$'),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, set_time_zone)
             ],
         },
         fallbacks=[
-            CommandHandler('help', help_command),
             CallbackQueryHandler(button_handler)
         ],
         per_message=False
     )
 
     application.add_handler(conv_handler)
+    application.add_handler(CallbackQueryHandler(button_handler))
+
     application.add_handler(CommandHandler('start', wake_up))
     application.add_handler(CommandHandler('help', help_command))
     application.add_handler(CommandHandler('keep_settings', keep_settings))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(r'\d+'), say_hi))
-    application.add_handler(CallbackQueryHandler(button_handler))
 
-    application.add_error_handler(handle_telegram_error)
+    application.add_error_handler(stop_sending)
 
     application.job_queue.run_repeating(send_news, interval=60, first=10)
     application.run_polling()

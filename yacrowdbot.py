@@ -62,6 +62,10 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     message = update.message.text
     logging.info(f"Получено сообщение от пользователя: {message}")
+    keyboard = [
+        [InlineKeyboardButton('Оставить текущие настройки', callback_data='keep_settings')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
     try:
         start_time, end_time = message.split('-')
@@ -85,14 +89,16 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await context.bot.send_message(
                 chat_id=chat.id,
-                text='Неверный формат времени. Пожалуйста, используйте формат чч:мм-чч:мм.'
+                text='Неверный формат времени. Пожалуйста, используйте формат чч:мм-чч:мм.',
+                reply_markup=reply_markup
             )
             return SET_TIME
     except ValueError:
         logging.error("Ошибка при разборе времени", exc_info=True)  # Добавлено для отслеживания ошибки
         await context.bot.send_message(
             chat_id=chat.id,
-            text='Неверный формат времени. Пожалуйста, используйте формат чч:мм-чч:мм.'
+            text='Неверный формат времени. Пожалуйста, используйте формат чч:мм-чч:мм.',
+            reply_markup=reply_markup
         )
         return SET_TIME
 
@@ -124,6 +130,10 @@ async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     message = update.message.text.strip()
     logging.info(f"Получено сообщение от пользователя {chat_id}: {message}")
+    keyboard = [
+        [InlineKeyboardButton('Оставить текущие настройки', callback_data='keep_settings')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
     try:
         if not (message.startswith('+') or message.startswith('-')) or ':' not in message:
@@ -141,23 +151,24 @@ async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sign = message[0]
         formatted_time_zone = f"{sign}{hours:02}:{minutes:02}"
 
-        logging.info(f"Обновление часового пояса для пользователя {chat_id} на {formatted_time_zone}")
+        logging.info(f'Обновление часового пояса для пользователя {chat_id} на {formatted_time_zone}')
 
         updated_user = await update_user(chat_id, {'time_zone': formatted_time_zone})
 
         if updated_user and updated_user.get('time_zone') == formatted_time_zone:
-            await context.bot.send_message(chat_id=chat_id, text=f"Ваш часовой пояс успешно установлен на {formatted_time_zone}!")
-            logging.info(f"Часовой пояс {formatted_time_zone} успешно установлен для пользователя {chat_id}.")
+            await context.bot.send_message(chat_id=chat_id, text=f'Ваш часовой пояс успешно установлен на {formatted_time_zone}!')
+            logging.info(f'Часовой пояс {formatted_time_zone} успешно установлен для пользователя {chat_id}.')
             return ConversationHandler.END
         else:
-            logging.error(f"Не удалось обновить часовой пояс для пользователя {chat_id}.")
-            await context.bot.send_message(chat_id=chat_id, text="Не удалось обновить часовой пояс. Попробуйте снова позже.")
+            logging.error(f'Не удалось обновить часовой пояс для пользователя {chat_id}.')
+            await context.bot.send_message(chat_id=chat_id, text='Не удалось обновить часовой пояс. Попробуйте снова позже.')
             return SET_TIME_ZONE
 
     except ValueError as error:
         await context.bot.send_message(
             chat_id=chat_id,
-            text="Указанный вами часовой пояс не найден или имеет неверный формат. Пожалуйста, введите часовой пояс в формате '±чч:мм'."
+            text='Указанный вами часовой пояс не найден или имеет неверный формат. Пожалуйста, введите часовой пояс в формате ±чч:мм.',
+            reply_markup=reply_markup
         )
         logging.error(f"Ошибка при установке часового пояса для пользователя {chat_id}: {error}")
         return SET_TIME_ZONE
@@ -360,15 +371,19 @@ def main():
         states={
             SET_TIME: [
                 CallbackQueryHandler(button_handler, pattern='^keep_settings$'),
+                CommandHandler('keep_settings', keep_settings),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, set_time)
             ],
             SET_TIME_ZONE: [
                 CallbackQueryHandler(button_handler, pattern='^keep_settings$'),
+                CommandHandler('keep_settings', keep_settings),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, set_time_zone)
             ],
         },
         fallbacks=[
-            CallbackQueryHandler(button_handler)
+            CallbackQueryHandler(button_handler, pattern='^keep_settings$'),
+            CommandHandler('keep_settings', keep_settings),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler)
         ],
         per_message=False
     )

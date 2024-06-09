@@ -216,7 +216,8 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                 start_time = datetime.strptime(user.get('start_time'), '%H:%M').time()
                 end_time = datetime.strptime(user.get('end_time'), '%H:%M').time()
 
-                logging.info(f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
+                logging.info(
+                    f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
 
                 if start_time <= now_local.time() <= end_time:
                     for post in posts:
@@ -226,7 +227,8 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                 if user['id'] in last_sent_posts and post_id <= last_sent_posts[user['id']]:
                                     continue  # Skip this post if it has already been sent to the user
 
-                                post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.utc)
+                                post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(
+                                    tzinfo=pytz.utc)
                                 logging.info(f"Проверка времени поста: post_time={post_time}")
 
                                 post_time_local = post_time.astimezone(user_timezone)
@@ -247,14 +249,14 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                                 logging.error(f"Ошибка при получении изображения {image_url}: {e}")
 
                                     if post.get('video'):
-                                        # Проверка доступности видео по URL
-                                        video_url = post['video']
-                                        try:
-                                            response = requests.get(video_url)
-                                            response.raise_for_status()  # Проверка на успешный статус код
-                                            await context.bot.send_video(chat_id=user['id'], video=video_url)
-                                        except requests.exceptions.RequestException as e:
-                                            logging.error(f"Ошибка при получении видео {video_url}: {e}")
+                                        # Отправка всех видео по одному
+                                        for video_url in post['video']:
+                                            try:
+                                                response = requests.get(video_url)
+                                                response.raise_for_status()  # Проверка на успешный статус код
+                                                await context.bot.send_video(chat_id=user['id'], video=video_url)
+                                            except requests.exceptions.RequestException as e:
+                                                logging.error(f"Ошибка при получении видео {video_url}: {e}")
 
                                     last_sent_posts[user['id']] = post_id  # Обновление ID последнего отправленного поста для пользователя
 

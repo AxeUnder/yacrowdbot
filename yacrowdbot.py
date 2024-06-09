@@ -219,6 +219,7 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
 
         users = await get_users()
         if not users:
+            logging.info('Нет активных пользователей для рассылки новостей.')
             return
 
         for user in users:
@@ -233,7 +234,9 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                 logging.info(
                     f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
 
-                if start_time <= now_local.time() <= end_time:
+                # Проверка временного интервала с учетом пересечения дня
+                if (start_time <= end_time and start_time <= now_local.time() <= end_time) or \
+                        (start_time > end_time and (now_local.time() >= start_time or now_local.time() <= end_time)):
                     for post in posts:
                         if isinstance(post, dict) and 'date_create' in post and 'title' in post and 'text' in post:
                             try:
@@ -243,7 +246,7 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
 
                                 post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(
                                     tzinfo=pytz.utc)
-                                logging.info(f"Проверка времени поста: post_time={post_time}")
+                                logging.info(f'Проверка времени поста: post_time={post_time}')
 
                                 post_time_local = post_time.astimezone(user_timezone)
 
@@ -259,6 +262,8 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                                 response = requests.get(image_url)
                                                 response.raise_for_status()  # Проверка на успешный статус код
                                                 await context.bot.send_photo(chat_id=user['id'], photo=image_url)
+                                                logging.info(
+                                                    f"Изображение успешно отправлено пользователю {user['id']}")
                                             except requests.exceptions.RequestException as e:
                                                 logging.error(f"Ошибка при получении изображения {image_url}: {e}")
 
@@ -269,6 +274,7 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                                 response = requests.get(video_url)
                                                 response.raise_for_status()  # Проверка на успешный статус код
                                                 await context.bot.send_video(chat_id=user['id'], video=video_url)
+                                                logging.info(f"Видео успешно отправлено пользователю {user['id']}")
                                             except requests.exceptions.RequestException as e:
                                                 logging.error(f"Ошибка при получении видео {video_url}: {e}")
 

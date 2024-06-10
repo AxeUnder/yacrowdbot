@@ -211,6 +211,15 @@ def convert_time_zone(time_zone):
     return pytz.FixedOffset(offset)
 
 
+async def handle_block_error(chat_id):
+    """Обработка ошибки блокировки бота пользователем"""
+    try:
+        await update_user(chat_id, {'active': False})
+        logging.info(f'Пользователь {chat_id} заблокировал бота. Маркер активности был изменен в БД.')
+    except Exception as e:
+        logging.error(f'Ошибка при обновлении статуса пользователя {chat_id} в БД: {e}')
+
+
 async def send_news(context: ContextTypes.DEFAULT_TYPE):
     """Рассылка новостей"""
     try:
@@ -280,8 +289,11 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
 
                                     last_sent_posts[user['id']] = post_id  # Обновление ID последнего отправленного поста для пользователя
 
-                            except Exception as e:
-                                logging.error(f'Ошибка при отправке поста пользователю {user["id"]}: {e}')
+                            except TelegramError as error:
+                                if 'blocked by the user' in str(error):
+                                    await handle_block_error(user['id'])
+                                else:
+                                    logging.error(f'Ошибка при отправке поста пользователю {user["id"]}: {error}')
 
     except Exception as e:
         logging.error(f'Ошибка при рассылке новостей: {e}')
@@ -324,19 +336,6 @@ async def keep_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     return ConversationHandler.END
-
-
-async def stop_sending(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отключение рассылки новостей"""
-    try:
-        raise context.error
-    except TelegramError as error:
-        if 'blocked by the user' in str(error):
-            chat_id = update.effective_chat.id
-            await update_user(chat_id, {'active': False})
-            logging.info(f'Пользователь {chat_id} заблокировал бота. Маркер активности был изменен в БД.')
-        else:
-            logging.error(f'Telegram error: {error}')
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -402,8 +401,6 @@ def main():
     application.add_handler(CommandHandler('keep_settings', keep_settings))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(r'\d+'), say_hi))
-
-    application.add_error_handler(stop_sending)
 
     application.job_queue.run_repeating(send_news, interval=60, first=10)
     application.run_polling()

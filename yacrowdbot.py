@@ -24,7 +24,17 @@ SET_TIME, SET_TIME_ZONE = range(2)
 async def say_hi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Функция приветствия"""
     chat = update.effective_chat
-    await context.bot.send_message(chat_id=chat.id, text='Привет, я CrowdBot!')
+    keyboard = [
+        [InlineKeyboardButton('Помощь', callback_data='help')],
+        [InlineKeyboardButton('Изменить время⌛', callback_data='change_time')],
+        [InlineKeyboardButton('Изменить часовой пояс🌐', callback_data='change_time_zone')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await context.bot.send_message(
+        chat_id=chat.id,
+        text='Привет, я CrowdBot!',
+        reply_markup=reply_markup
+    )
 
 
 async def change_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -284,8 +294,10 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                                 response.raise_for_status()  # Проверка на успешный статус код
                                                 await context.bot.send_video(chat_id=user['id'], video=video_url)
                                                 logging.info(f"Видео успешно отправлено пользователю {user['id']}")
-                                            except requests.exceptions.RequestException as e:
-                                                logging.error(f"Ошибка при получении видео {video_url}: {e}")
+                                            except requests.exceptions.RequestException as error:
+                                                logging.error(f'Ошибка при получении видео {video_url}: {error}')
+                                            except TelegramError as error:
+                                                logging.error(f'Ошибка Telegram при отправке видео {video_url}: {error}')
 
                                     last_sent_posts[user['id']] = post_id  # Обновление ID последнего отправленного поста для пользователя
 

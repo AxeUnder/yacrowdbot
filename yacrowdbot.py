@@ -285,8 +285,24 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                             try:
                                                 response = requests.get(video_url)
                                                 response.raise_for_status()  # Проверка на успешный статус код
-                                                await context.bot.send_video(chat_id=user['id'], video=video_url)
+
+                                                # Загрузка видео
+                                                video_data = response.content
+                                                temp_video_path = '/mnt/data/temp_video.mp4'
+
+                                                # Убедимся, что директория существует
+                                                os.makedirs(os.path.dirname(temp_video_path), exist_ok=True)
+
+                                                with open(temp_video_path, 'wb') as video_file:
+                                                    video_file.write(video_data)
+
+                                                # Отправка видео
+                                                with open(temp_video_path, 'rb') as video_file:
+                                                    await context.bot.send_video(chat_id=user['id'], video=video_file)
                                                 logger.info(f"Видео успешно отправлено пользователю {user['id']}")
+
+                                                # Удаление временного файла после отправки
+                                                os.remove(temp_video_path)
                                             except requests.exceptions.RequestException as e:
                                                 logger.error(f'Ошибка при получении видео {video_url}: {e}')
                                             except TelegramError as error:

@@ -12,7 +12,7 @@ from api import *
 
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logging.getLogger().setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 # A dictionary to keep track of the last post sent to each user
 last_sent_posts = {}
@@ -20,16 +20,17 @@ last_sent_posts = {}
 # Define states for ConversationHandler
 SET_TIME, SET_TIME_ZONE = range(2)
 
+DEFAULT_KEYBOARD = [
+    [InlineKeyboardButton('Помощь', callback_data='help')],
+    [InlineKeyboardButton('Изменить время⌛', callback_data='change_time')],
+    [InlineKeyboardButton('Изменить часовой пояс🌐', callback_data='change_time_zone')]
+]
+
 
 async def say_hi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Функция приветствия"""
     chat = update.effective_chat
-    keyboard = [
-        [InlineKeyboardButton('Помощь', callback_data='help')],
-        [InlineKeyboardButton('Изменить время⌛', callback_data='change_time')],
-        [InlineKeyboardButton('Изменить часовой пояс🌐', callback_data='change_time_zone')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(DEFAULT_KEYBOARD)
     await context.bot.send_message(
         chat_id=chat.id,
         text='Привет, я CrowdBot!',
@@ -71,7 +72,7 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Установка времени рассылки"""
     chat = update.effective_chat
     message = update.message.text
-    logging.info(f"Получено сообщение от пользователя: {message}")
+    logging.info(f'Получено сообщение от пользователя: {message}')
     keyboard = [
         [InlineKeyboardButton('Оставить текущие настройки', callback_data='keep_settings')]
     ]
@@ -94,7 +95,7 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=f'Время отправки новостей изменено на {start_hour:02}:{start_minute:02}-'
                      f'{end_hour:02}:{end_minute:02}'
             )
-            logging.info(f"Время успешно изменено для пользователя {chat.id}")
+            logging.info(f'Время успешно изменено для пользователя {chat.id}')
             return ConversationHandler.END
         else:
             await context.bot.send_message(
@@ -104,7 +105,7 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return SET_TIME
     except ValueError:
-        logging.error("Ошибка при разборе времени", exc_info=True)  # Добавлено для отслеживания ошибки
+        logging.error('Ошибка при разборе времени', exc_info=True)  # Добавлено для отслеживания ошибки
         await context.bot.send_message(
             chat_id=chat.id,
             text='Неверный формат времени. Пожалуйста, используйте формат чч:мм-чч:мм.',
@@ -139,7 +140,7 @@ async def change_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     message = update.message.text.strip()
-    logging.info(f"Получено сообщение от пользователя {chat_id}: {message}")
+    logging.info(f'Получено сообщение от пользователя {chat_id}: {message}')
     keyboard = [
         [InlineKeyboardButton('Оставить текущие настройки', callback_data='keep_settings')]
     ]
@@ -159,7 +160,7 @@ async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise ValueError('Неверное значение часов или минут')
 
         sign = message[0]
-        formatted_time_zone = f"{sign}{hours:02}:{minutes:02}"
+        formatted_time_zone = f'{sign}{hours:02}:{minutes:02}'
 
         logging.info(f'Обновление часового пояса для пользователя {chat_id} на {formatted_time_zone}')
 
@@ -188,12 +189,7 @@ async def wake_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Запуск бота"""
     chat = update.effective_chat
     name = update.message.chat.username
-    keyboard = [
-        [InlineKeyboardButton('Помощь', callback_data='help')],
-        [InlineKeyboardButton('Изменить время⌛', callback_data='change_time')],
-        [InlineKeyboardButton('Изменить часовой пояс🌐', callback_data='change_time_zone')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(DEFAULT_KEYBOARD)
 
     # Пробуем получить данные пользователя. Если он отсутствует, создадим нового пользователя.
     try:
@@ -238,7 +234,7 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
 
         users = await get_users()
         if not users:
-            logging.info('Нет активных пользователей для рассылки новостей.')
+            logger.info('Нет активных пользователей для рассылки новостей.')
             return
 
         for user in users:
@@ -250,8 +246,7 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                 start_time = datetime.strptime(user.get('start_time')[:5], '%H:%M').time()
                 end_time = datetime.strptime(user.get('end_time')[:5], '%H:%M').time()
 
-                logging.info(
-                    f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
+                logger.info(f"Проверка времени для пользователя {user['id']}: now={now_local.time()}, start_time={start_time}, end_time={end_time}")
 
                 # Проверка временного интервала с учетом пересечения дня
                 if (start_time <= end_time and start_time <= now_local.time() <= end_time) or \
@@ -265,39 +260,36 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
 
                                 post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(
                                     tzinfo=pytz.utc)
-                                logging.info(f'Проверка времени поста: post_time={post_time}')
+                                logger.info(f'Проверка времени поста: post_time={post_time}')
 
                                 post_time_local = post_time.astimezone(user_timezone)
 
                                 if post_time_local >= (now_local - timedelta(minutes=10)):
                                     post_content = f"{post['title']}\n\n{post['text']}"
-                                    logging.info(f"Отправка сообщения пользователю {user['id']}: {post_content}")
+                                    logger.info(f"Отправка сообщения пользователю {user['id']}: {post_content}")
                                     await context.bot.send_message(chat_id=user['id'], text=post_content)
 
                                     if post.get('image'):
-                                        # Отправка всех изображений по одному
                                         for image_url in post['image']:
                                             try:
                                                 response = requests.get(image_url)
                                                 response.raise_for_status()  # Проверка на успешный статус код
                                                 await context.bot.send_photo(chat_id=user['id'], photo=image_url)
-                                                logging.info(
-                                                    f"Изображение успешно отправлено пользователю {user['id']}")
+                                                logger.info(f"Изображение успешно отправлено пользователю {user['id']}")
                                             except requests.exceptions.RequestException as e:
-                                                logging.error(f"Ошибка при получении изображения {image_url}: {e}")
+                                                logger.error(f'Ошибка при получении изображения {image_url}: {e}')
 
                                     if post.get('video'):
-                                        # Отправка всех видео по одному
                                         for video_url in post['video']:
                                             try:
                                                 response = requests.get(video_url)
                                                 response.raise_for_status()  # Проверка на успешный статус код
                                                 await context.bot.send_video(chat_id=user['id'], video=video_url)
-                                                logging.info(f"Видео успешно отправлено пользователю {user['id']}")
-                                            except requests.exceptions.RequestException as error:
-                                                logging.error(f'Ошибка при получении видео {video_url}: {error}')
+                                                logger.info(f"Видео успешно отправлено пользователю {user['id']}")
+                                            except requests.exceptions.RequestException as e:
+                                                logger.error(f'Ошибка при получении видео {video_url}: {e}')
                                             except TelegramError as error:
-                                                logging.error(f'Ошибка Telegram при отправке видео {video_url}: {error}')
+                                                logger.error(f'Ошибка Telegram при отправке видео {video_url}: {error}')
 
                                     last_sent_posts[user['id']] = post_id  # Обновление ID последнего отправленного поста для пользователя
 
@@ -305,21 +297,16 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                 if 'blocked by the user' in str(error):
                                     await handle_block_error(user['id'])
                                 else:
-                                    logging.error(f'Ошибка при отправке поста пользователю {user["id"]}: {error}')
+                                    logger.error(f"Ошибка при отправке поста пользователю {user['id']}: {error}")
 
     except Exception as e:
-        logging.error(f'Ошибка при рассылке новостей: {e}')
+        logger.error(f'Ошибка при рассылке новостей: {e}')
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Помощь по командам"""
     chat = update.effective_chat
-    keyboard = [
-        [InlineKeyboardButton('Помощь', callback_data='help')],
-        [InlineKeyboardButton('Изменить время⌛', callback_data='change_time')],
-        [InlineKeyboardButton('Изменить часовой пояс🌐', callback_data='change_time_zone')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(DEFAULT_KEYBOARD)
     await context.bot.send_message(
         chat_id=chat.id,
         text='Команды бота:\n'
@@ -335,12 +322,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def keep_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Оставить текущие настройки"""
     chat = update.effective_chat
-    keyboard = [
-        [InlineKeyboardButton('Помощь', callback_data='help')],
-        [InlineKeyboardButton('Изменить время⌛', callback_data='change_time')],
-        [InlineKeyboardButton('Изменить часовой пояс🌐', callback_data='change_time_zone')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = InlineKeyboardMarkup(DEFAULT_KEYBOARD)
     await context.bot.send_message(
         chat_id=chat.id,
         text='Текущие настройки оставлены без изменений.',
@@ -376,7 +358,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     application = Application.builder().token(API_TOKEN).build()
 
-    # Добавляем обработчик конверсации
+    # Обработчик конверсии
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler('start', wake_up),

@@ -238,6 +238,9 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
             logger.info('Нет активных пользователей для рассылки новостей.')
             return
 
+        # Временное хранилище для загруженных видео
+        video_cache = {}
+
         for user in users:
             if user.get('active'):
                 user_timezone_offset = user.get('time_zone')
@@ -283,26 +286,31 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                     if post.get('video'):
                                         for video_url in post['video']:
                                             try:
-                                                response = requests.get(video_url)
-                                                response.raise_for_status()  # Проверка на успешный статус код
+                                                # Проверка, было ли видео уже загружено
+                                                if video_url in video_cache:
+                                                    video_path = video_cache[video_url]
+                                                else:
+                                                    response = requests.get(video_url)
+                                                    response.raise_for_status()  # Проверка на успешный статус код
 
-                                                # Загрузка видео
-                                                video_data = response.content
-                                                temp_video_path = '/mnt/data/temp_video.mp4'
+                                                    # Загрузка видео
+                                                    video_data = response.content
+                                                    video_path = f'/mnt/data/{os.path.basename(video_url)}'
 
-                                                # Убедимся, что директория существует
-                                                os.makedirs(os.path.dirname(temp_video_path), exist_ok=True)
+                                                    # Убедимся, что директория существует
+                                                    os.makedirs(os.path.dirname(video_path), exist_ok=True)
 
-                                                with open(temp_video_path, 'wb') as video_file:
-                                                    video_file.write(video_data)
+                                                    with open(video_path, 'wb') as video_file:
+                                                        video_file.write(video_data)
+
+                                                    # Сохранение пути к видео в кэш
+                                                    video_cache[video_url] = video_path
 
                                                 # Отправка видео
-                                                with open(temp_video_path, 'rb') as video_file:
+                                                with open(video_path, 'rb') as video_file:
                                                     await context.bot.send_video(chat_id=user['id'], video=video_file)
                                                 logger.info(f"Видео успешно отправлено пользователю {user['id']}")
 
-                                                # Удаление временного файла после отправки
-                                                os.remove(temp_video_path)
                                             except requests.exceptions.RequestException as e:
                                                 logger.error(f'Ошибка при получении видео {video_url}: {e}')
                                             except TelegramError as error:
@@ -315,6 +323,14 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                     await handle_block_error(user['id'])
                                 else:
                                     logger.error(f"Ошибка при отправке поста пользователю {user['id']}: {error}")
+
+        # Удаление временных файлов после рассылки всем пользователям
+        for video_path in video_cache.values():
+            try:
+                os.remove(video_path)
+                logger.info(f'Временный файл {video_path} удален.')
+            except OSError as error:
+                logger.error(f'Ошибка при удалении временного файла {video_path}: {error}')
 
     except Exception as e:
         logger.error(f'Ошибка при рассылке новостей: {e}')
@@ -369,7 +385,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await keep_settings(update, context)
             return ConversationHandler.END
     except Exception as e:
-        logging.error(f'Ошибка при обработке нажатия кнопок: {e}')
+        logger.error(f'Ошибка при обработке нажатия кнопок: {e}')
 
 
 def main():

@@ -10,14 +10,14 @@ import pytz
 
 from api import *
 
-
+# Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# A dictionary to keep track of the last post sent to each user
+# Словарь для отслеживания последнего отправленного поста для каждого пользователя
 last_sent_posts = {}
 
-# Define states for ConversationHandler
+# Определение состояний для ConversationHandler
 SET_TIME, SET_TIME_ZONE = range(2)
 
 DEFAULT_KEYBOARD = [
@@ -31,11 +31,14 @@ async def say_hi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Функция приветствия"""
     chat = update.effective_chat
     reply_markup = InlineKeyboardMarkup(DEFAULT_KEYBOARD)
-    await context.bot.send_message(
-        chat_id=chat.id,
-        text='Привет, я CrowdBot!',
-        reply_markup=reply_markup
-    )
+    try:
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text='Привет, я CrowdBot!',
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        logger.error(f'Ошибка при отправке приветственного сообщения пользователю {chat.id}: {e}')
 
 
 async def change_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -46,7 +49,7 @@ async def change_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_time = response.get('start_time')
     end_time = response.get('end_time')
 
-    # Преобразуем время из формата чч:мм:сс в чч:мм
+    # Преобразование времени из формата чч:мм:сс в чч:мм
     if len(start_time) > 5:
         start_time = start_time[:5]
     if len(end_time) > 5:
@@ -62,9 +65,7 @@ async def change_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
              'Для смены времени отправки новостей введите интервал времени в формате: чч:мм-чч:мм',
         reply_markup=reply_markup
     )
-
-    logging.info(f'Текущие настройки времени: {start_time}-{end_time}')
-
+    logger.info(f'Пользователь {chat.id} запросил смену времени. Текущие настройки: {start_time}-{end_time}')
     return SET_TIME
 
 
@@ -72,7 +73,7 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Установка времени рассылки"""
     chat = update.effective_chat
     message = update.message.text
-    logging.info(f'Получено сообщение от пользователя: {message}')
+    logger.info(f'Получено сообщение от пользователя {chat.id}: {message}')
     keyboard = [
         [InlineKeyboardButton('Оставить текущие настройки', callback_data='keep_settings')]
     ]
@@ -84,7 +85,6 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         end_hour, end_minute = map(int, end_time.split(':'))
 
         if 0 <= start_hour < 24 and 0 <= start_minute < 60 and 0 <= end_hour < 24 and 0 <= end_minute < 60:
-            # Обновляем время в базе данных
             await update_user(chat.id, {
                 'start_time': f'{start_hour:02}:{start_minute:02}',
                 'end_time': f'{end_hour:02}:{end_minute:02}'
@@ -95,7 +95,7 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=f'Время отправки новостей изменено на {start_hour:02}:{start_minute:02}-'
                      f'{end_hour:02}:{end_minute:02}'
             )
-            logging.info(f'Время успешно изменено для пользователя {chat.id}')
+            logger.info(f'Время успешно изменено для пользователя {chat.id} на {start_hour:02}:{start_minute:02}-{end_hour:02}:{end_minute:02}')
             return ConversationHandler.END
         else:
             await context.bot.send_message(
@@ -105,7 +105,7 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return SET_TIME
     except ValueError:
-        logging.error('Ошибка при разборе времени', exc_info=True)  # Добавлено для отслеживания ошибки
+        logger.error(f'Неверный формат времени от пользователя {chat.id}: {message}', exc_info=True)
         await context.bot.send_message(
             chat_id=chat.id,
             text='Неверный формат времени. Пожалуйста, используйте формат чч:мм-чч:мм.',
@@ -132,15 +132,14 @@ async def change_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-    logging.info(f'Текущий часовой пояс пользователя {chat.id}: {time_zone}')
-
+    logger.info(f'Пользователь {chat.id} запросил смену часового пояса. Текущие настройки: {time_zone}')
     return SET_TIME_ZONE
 
 
 async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     message = update.message.text.strip()
-    logging.info(f'Получено сообщение от пользователя {chat_id}: {message}')
+    logger.info(f'Получено сообщение от пользователя {chat_id}: {message}')
     keyboard = [
         [InlineKeyboardButton('Оставить текущие настройки', callback_data='keep_settings')]
     ]
@@ -162,16 +161,16 @@ async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sign = message[0]
         formatted_time_zone = f'{sign}{hours:02}:{minutes:02}'
 
-        logging.info(f'Обновление часового пояса для пользователя {chat_id} на {formatted_time_zone}')
+        logger.info(f'Обновление часового пояса для пользователя {chat_id} на {formatted_time_zone}')
 
         updated_user = await update_user(chat_id, {'time_zone': formatted_time_zone})
 
         if updated_user and updated_user.get('time_zone') == formatted_time_zone:
             await context.bot.send_message(chat_id=chat_id, text=f'Ваш часовой пояс успешно установлен на {formatted_time_zone}!')
-            logging.info(f'Часовой пояс {formatted_time_zone} успешно установлен для пользователя {chat_id}.')
+            logger.info(f'Часовой пояс {formatted_time_zone} успешно установлен для пользователя {chat_id}.')
             return ConversationHandler.END
         else:
-            logging.error(f'Не удалось обновить часовой пояс для пользователя {chat_id}.')
+            logger.error(f'Не удалось обновить часовой пояс для пользователя {chat_id}.')
             await context.bot.send_message(chat_id=chat_id, text='Не удалось обновить часовой пояс. Попробуйте снова позже.')
             return SET_TIME_ZONE
 
@@ -181,7 +180,7 @@ async def set_time_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text='Указанный вами часовой пояс не найден или имеет неверный формат. Пожалуйста, введите часовой пояс в формате ±чч:мм.',
             reply_markup=reply_markup
         )
-        logging.error(f"Ошибка при установке часового пояса для пользователя {chat_id}: {error}")
+        logger.error(f"Ошибка при установке часового пояса для пользователя {chat_id}: {error}")
         return SET_TIME_ZONE
 
 
@@ -191,21 +190,23 @@ async def wake_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.chat.username
     reply_markup = InlineKeyboardMarkup(DEFAULT_KEYBOARD)
 
-    # Пробуем получить данные пользователя. Если он отсутствует, создадим нового пользователя.
     try:
         user = await get_user(chat.id)
         if not user:
             await store_user(chat.id, name)
+            logger.info(f'Новый пользователь {chat.id} ({name}) добавлен в базу данных.')
         else:
             await update_user(chat.id, {'active': True})
+            logger.info(f'Пользователь {chat.id} ({name}) активировал бота.')
     except Exception as e:
-        logging.error(f'Ошибка при работе с таблицей Users: {e}')
+        logger.error(f'Ошибка при работе с таблицей Users для пользователя {chat.id} ({name}): {e}')
 
     await context.bot.send_message(
         chat_id=chat.id,
         text=f'Спасибо, что включили меня, {name}!',
         reply_markup=reply_markup
     )
+    logger.debug(f'Отправлено сообщение о включении бота пользователю {chat.id}')
 
 
 def convert_time_zone(time_zone):

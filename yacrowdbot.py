@@ -7,6 +7,7 @@ from telegram.ext import (Application, CommandHandler, MessageHandler, filters, 
                           ConversationHandler, CallbackQueryHandler)
 from telegram.error import TelegramError
 import pytz
+from telegram.request import HTTPXRequest
 
 from api import *
 
@@ -19,6 +20,14 @@ last_sent_posts = {}
 
 # Определение состояний для ConversationHandler
 SET_TIME, SET_TIME_ZONE = range(2)
+
+# Настройка тайм-аутов и лимитов для HTTPXRequest
+request = HTTPXRequest(
+    connect_timeout=50.0,
+    read_timeout=200.0,
+    write_timeout=200.0,
+    pool_timeout=300.0
+)
 
 DEFAULT_KEYBOARD = [
     [InlineKeyboardButton('Помощь', callback_data='help')],
@@ -291,21 +300,17 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                                     video_path = video_cache[video_url]
                                                 else:
                                                     response = requests.get(video_url)
-                                                    response.raise_for_status()  # Проверка на успешный статус код
-
+                                                    response.raise_for_status()
                                                     # Загрузка видео
                                                     video_data = response.content
                                                     video_path = f'/mnt/data/{os.path.basename(video_url)}'
-
                                                     # Убедимся, что директория существует
                                                     os.makedirs(os.path.dirname(video_path), exist_ok=True)
 
                                                     with open(video_path, 'wb') as video_file:
                                                         video_file.write(video_data)
-
                                                     # Сохранение пути к видео в кэш
                                                     video_cache[video_url] = video_path
-
                                                 # Отправка видео
                                                 with open(video_path, 'rb') as video_file:
                                                     await context.bot.send_video(chat_id=user['id'], video=video_file)
@@ -316,7 +321,11 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                                             except TelegramError as error:
                                                 logger.error(f'Ошибка Telegram при отправке видео {video_url}: {error}')
 
-                                    last_sent_posts[user['id']] = post_id  # Обновление ID последнего отправленного поста для пользователя
+                                    # Удаление старых записей из списка отправленных постов
+                                    if len(last_sent_posts[user['id']]) > 10:
+                                        last_sent_posts[user['id']].pop(0)
+                                    # Обновление ID последнего отправленного поста для пользователя
+                                    last_sent_posts[user['id']] = post_id
 
                             except TelegramError as error:
                                 if 'blocked by the user' in str(error):
@@ -389,7 +398,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    application = Application.builder().token(API_TOKEN).build()
+    application = Application.builder().token(API_TOKEN).request(request).build()
 
     # Обработчик конверсии
     conv_handler = ConversationHandler(
@@ -429,7 +438,7 @@ def main():
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, say_hi))
 
-    application.job_queue.run_repeating(send_news, interval=60, first=10)
+    application.job_queue.run_repeating(send_news, interval=600, first=10)
     application.run_polling()
 
 

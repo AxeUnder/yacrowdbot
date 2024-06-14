@@ -18,4 +18,4 @@ HEADERS = {
 
 # Убедитесь, что все необходимые переменные окружения загружены правильно
 if not all([API_TOKEN, JETADMIN_API_KEY, API_URL_POST, API_URL_USER]):
-    raise EnvironmentError("Не удалось загрузить одну или несколько переменных окружения. Проверьте файл .env")
+    raise EnvironmentError('Не удалось загрузить одну или несколько переменных окружения. Проверьте файл .env')

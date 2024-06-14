@@ -427,7 +427,7 @@ def main():
     application.add_handler(CommandHandler('help', help_command))
     application.add_handler(CommandHandler('keep_settings', keep_settings))
 
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(r'\d+'), say_hi))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, say_hi))
 
     application.job_queue.run_repeating(send_news, interval=60, first=10)
     application.run_polling()

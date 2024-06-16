@@ -23,10 +23,10 @@ SET_TIME, SET_TIME_ZONE = range(2)
 
 # Настройка тайм-аутов и лимитов для HTTPXRequest
 request = HTTPXRequest(
-    connect_timeout=50.0,
-    read_timeout=200.0,
-    write_timeout=200.0,
-    pool_timeout=300.0
+    connect_timeout=10.0,
+    read_timeout=300.0,
+    write_timeout=300.0,
+    pool_timeout=5.0
 )
 
 DEFAULT_KEYBOARD = [

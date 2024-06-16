@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 
 import requests
@@ -250,7 +251,57 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
         # Временное хранилище для загруженных видео
         video_cache = {}
 
-        for user in users:
+        async def send_post(user, post):
+            """Асинхронная отправка постов"""
+            post_content = f"{post['title']}\n\n{post['text']}"
+            logger.info(f"Отправка сообщения пользователю {user['id']}: {post_content}")
+            await context.bot.send_message(chat_id=user['id'], text=post_content)
+
+            if post.get('image'):
+                for image_url in post['image']:
+                    try:
+                        response = requests.get(image_url)
+                        response.raise_for_status()  # Проверка на успешный статус код
+                        await context.bot.send_photo(chat_id=user['id'], photo=image_url)
+                        logger.info(f"Изображение успешно отправлено пользователю {user['id']}")
+                    except requests.exceptions.RequestException as e:
+                        logger.error(f'Ошибка при получении изображения {image_url}: {e}')
+                    except TelegramError as error:
+                        logger.error(f'Ошибка Telegram при отправке изображения {image_url}: {error}')
+
+            if post.get('video'):
+                for video_url in post['video']:
+                    try:
+                        # Проверка, было ли видео уже загружено
+                        if video_url in video_cache:
+                            video_path = video_cache[video_url]
+                        else:
+                            response = requests.get(video_url)
+                            response.raise_for_status()
+                            # Загрузка видео
+                            video_data = response.content
+                            video_path = f'/mnt/data/{os.path.basename(video_url)}'
+                            # Убедимся, что директория существует
+                            os.makedirs(os.path.dirname(video_path), exist_ok=True)
+
+                            with open(video_path, 'wb') as video_file:
+                                video_file.write(video_data)
+                            # Сохранение пути к видео в кэш
+                            video_cache[video_url] = video_path
+                        # Отправка видео
+                        with open(video_path, 'rb') as video_file:
+                            await context.bot.send_video(chat_id=user['id'], video=video_file)
+                        logger.info(f"Видео успешно отправлено пользователю {user['id']}")
+
+                    except requests.exceptions.RequestException as e:
+                        logger.error(f'Ошибка при получении видео {video_url}: {e}')
+                        raise
+                    except TelegramError as error:
+                        logger.error(f'Ошибка Telegram при отправке видео {video_url}: {error}')
+                        raise
+
+        async def process_user(user):
+            """Асинхронная обработка пользователей"""
             if user.get('active'):
                 user_timezone_offset = user.get('time_zone')
                 user_timezone = convert_time_zone(user_timezone_offset)
@@ -268,70 +319,38 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                         if isinstance(post, dict) and 'date_create' in post and 'title' in post and 'text' in post:
                             try:
                                 post_id = post['id']
-                                if user['id'] in last_sent_posts and post_id <= last_sent_posts[user['id']]:
-                                    continue  # Skip this post if it has already been sent to the user
+                                if user['id'] in last_sent_posts and post_id not in last_sent_posts[user['id']]:
+                                    continue
 
                                 post_time = datetime.strptime(post['date_create'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(
                                     tzinfo=pytz.utc)
                                 logger.info(f'Проверка времени поста: post_time={post_time}')
-
                                 post_time_local = post_time.astimezone(user_timezone)
 
                                 if post_time_local >= (now_local - timedelta(minutes=10)):
-                                    post_content = f"{post['title']}\n\n{post['text']}"
-                                    logger.info(f"Отправка сообщения пользователю {user['id']}: {post_content}")
-                                    await context.bot.send_message(chat_id=user['id'], text=post_content)
+                                    await send_post(user, post)
+                                    last_sent_posts[user['id']] = post_id
 
-                                    if post.get('image'):
-                                        for image_url in post['image']:
-                                            try:
-                                                response = requests.get(image_url)
-                                                response.raise_for_status()  # Проверка на успешный статус код
-                                                await context.bot.send_photo(chat_id=user['id'], photo=image_url)
-                                                logger.info(f"Изображение успешно отправлено пользователю {user['id']}")
-                                            except requests.exceptions.RequestException as e:
-                                                logger.error(f'Ошибка при получении изображения {image_url}: {e}')
-
-                                    if post.get('video'):
-                                        for video_url in post['video']:
-                                            try:
-                                                # Проверка, было ли видео уже загружено
-                                                if video_url in video_cache:
-                                                    video_path = video_cache[video_url]
-                                                else:
-                                                    response = requests.get(video_url)
-                                                    response.raise_for_status()
-                                                    # Загрузка видео
-                                                    video_data = response.content
-                                                    video_path = f'/mnt/data/{os.path.basename(video_url)}'
-                                                    # Убедимся, что директория существует
-                                                    os.makedirs(os.path.dirname(video_path), exist_ok=True)
-
-                                                    with open(video_path, 'wb') as video_file:
-                                                        video_file.write(video_data)
-                                                    # Сохранение пути к видео в кэш
-                                                    video_cache[video_url] = video_path
-                                                # Отправка видео
-                                                with open(video_path, 'rb') as video_file:
-                                                    await context.bot.send_video(chat_id=user['id'], video=video_file)
-                                                logger.info(f"Видео успешно отправлено пользователю {user['id']}")
-
-                                            except requests.exceptions.RequestException as e:
-                                                logger.error(f'Ошибка при получении видео {video_url}: {e}')
-                                            except TelegramError as error:
-                                                logger.error(f'Ошибка Telegram при отправке видео {video_url}: {error}')
-
-                                    # Удаление старых записей из списка отправленных постов
+                                # Удаление старых записей из списка отправленных постов
+                                if user['id'] in last_sent_posts and isinstance(last_sent_posts[user['id']], list):
                                     if len(last_sent_posts[user['id']]) > 10:
                                         last_sent_posts[user['id']].pop(0)
-                                    # Обновление ID последнего отправленного поста для пользователя
-                                    last_sent_posts[user['id']] = post_id
+                                else:
+                                    last_sent_posts[user['id']] = []
+
+                                # Обновление списка отправленных постов для пользователя
+                                last_sent_posts[user['id']].append(post_id)
 
                             except TelegramError as error:
                                 if 'blocked by the user' in str(error):
                                     await handle_block_error(user['id'])
                                 else:
                                     logger.error(f"Ошибка при отправке поста пользователю {user['id']}: {error}")
+
+                            except Exception as e:
+                                logger.error(f"Неизвестная ошибка при отправке поста пользователю {user['id']}: {e}")
+
+        await asyncio.gather(*(process_user(user) for user in users))
 
         # Удаление временных файлов после рассылки всем пользователям
         for video_path in video_cache.values():

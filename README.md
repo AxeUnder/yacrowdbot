@@ -8,7 +8,7 @@ Yacrowdbot чат-бот предполагает автоматизацию р�
 ## Установка
 1. Клонируйте репозиторий:
     ```sh
-    git clone https://github.com/axeunder/yacrowdbot.git
+    git clone https://github.com/AxeUnder/yacrowdbot.git
     cd yacrowdbot
     ```
 2. Установите зависимости:

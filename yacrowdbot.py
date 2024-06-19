@@ -21,6 +21,9 @@ logging.basicConfig(format='%(asctime)s-%(name)s-%(levelname)s-%(message)s',
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Словарь для отслеживания последнего отправленного поста для каждого пользователя
+last_sent_posts = {}
+
 # Определение состояний для ConversationHandler
 SET_TIME, SET_TIME_ZONE = range(2)
 
@@ -290,11 +293,10 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
 
         async def send_post(user, post):
             """Асинхронная отправка постов"""
+            user_id = user['id']
             post_content = f"{post['title']}\n\n{post['text']}"
-            logger.info(f"Отправка поста пользователю {user['id']}: "
-                        f"{post['id']}")
-            await context.bot.send_message(chat_id=user['id'],
-                                           text=post_content)
+            logger.info(f"Отправка поста пользователю {user_id}: {post['id']}")
+            await context.bot.send_message(chat_id=user_id, text=post_content)
 
             if post.get('image'):
                 for image_url in post['image']:
@@ -302,10 +304,10 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                         response = requests.get(image_url)
                         # Проверка на успешный статус код
                         response.raise_for_status()
-                        await context.bot.send_photo(chat_id=user['id'],
+                        await context.bot.send_photo(chat_id=user_id,
                                                      photo=image_url)
                         logger.info('Изображение отправлено пользователю: '
-                                    f"{user['id']}")
+                                    f'{user_id}')
                     except requests.exceptions.RequestException as e:
                         logger.error('Ошибка при получении изображения '
                                      f'{image_url}: {e}')
@@ -336,10 +338,10 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                             video_cache[video_url] = video_path
                         # Отправка видео
                         with open(video_path, 'rb') as video_file:
-                            await context.bot.send_video(chat_id=user['id'],
+                            await context.bot.send_video(chat_id=user_id,
                                                          video=video_file)
                         logger.info('Видео успешно отправлено пользователю '
-                                    f"{user['id']}")
+                                    f'{user_id}')
 
                     except requests.exceptions.RequestException as e:
                         logger.error('Ошибка при получении видео '
@@ -352,6 +354,7 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
 
         async def process_user(user):
             """Асинхронная обработка пользователей"""
+            user_id = user['id']
             if user.get('active'):
                 user_timezone_offset = user.get('time_zone')
                 user_timezone = convert_time_zone(user_timezone_offset)
@@ -362,7 +365,7 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                 end_time = datetime.strptime(user.get('end_time')[:5],
                                              '%H:%M').time()
 
-                logger.info(f"Проверка времени для пользователя {user['id']}: "
+                logger.info(f'Проверка времени для пользователя {user_id}: '
                             f'now={now_local.time()}, '
                             f'start_time={start_time}, '
                             f'end_time={end_time}')
@@ -377,20 +380,32 @@ async def send_news(context: ContextTypes.DEFAULT_TYPE):
                         if (isinstance(post, dict) and 'date_create' in post
                                 and 'title' in post and 'text' in post):
                             try:
+                                post_id = post['id']
                                 post_time = datetime.strptime(
                                     post['date_create'],
                                     '%Y-%m-%dT%H:%M:%S.%fZ'
                                 ).replace(tzinfo=pytz.utc)
                                 logger.info('Проверка времени поста '
-                                            f"{post['id']}: {post_time}")
+                                            f'{post_id}: {post_time}')
                                 post_time_local = post_time.astimezone(
                                     user_timezone
                                 )
 
                                 if post_time_local >= (
-                                        now_local - timedelta(minutes=10)
+                                        now_local - timedelta(hours=24)
                                 ):
                                     await send_post(user, post)
+                                    last_sent_posts[user_id] = post_id
+
+                                # Удаление старых записей из списка отправленных постов
+                                if user_id in last_sent_posts and isinstance(last_sent_posts[user_id], list):
+                                    if len(last_sent_posts[user_id]) > 10:
+                                        last_sent_posts[user_id].pop(0)
+                                else:
+                                    last_sent_posts[user_id] = []
+
+                                # Обновление списка отправленных постов для пользователя
+                                last_sent_posts[user_id].append(post_id)
 
                             except TelegramError as error:
                                 if 'blocked by the user' in str(error):

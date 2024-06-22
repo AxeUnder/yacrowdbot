@@ -11,10 +11,9 @@ from telegram.ext import (
     ContextTypes, ConversationHandler, CallbackQueryHandler
 )
 from telegram.error import TelegramError
-from telegram.request import HTTPXRequest
 
 from api import get_user, update_user, store_user, get_posts, get_users
-from config import API_TOKEN
+from config import API_TOKEN, request
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s-%(name)s-%(levelname)s-%(message)s',
@@ -26,14 +25,6 @@ last_sent_posts = {}
 
 # Определение состояний для ConversationHandler
 SET_TIME, SET_TIME_ZONE = range(2)
-
-# Настройка тайм-аутов и лимитов для HTTPXRequest
-request = HTTPXRequest(
-    connect_timeout=10.0,
-    read_timeout=300.0,
-    write_timeout=300.0,
-    pool_timeout=5.0
-)
 
 DEFAULT_KEYBOARD = [
     [InlineKeyboardButton('Помощь', callback_data='help')],
